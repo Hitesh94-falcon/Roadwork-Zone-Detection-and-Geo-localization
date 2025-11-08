@@ -2,6 +2,7 @@
 
 import numpy as np
 import json
+import yaml
 
 """CHANGE THE PATH DIRECTORY IN THE MAIN()"""
 
@@ -11,7 +12,7 @@ import json
 def load_extrinsic(filename):
     with open(filename, 'r') as file:
         data = json.load(file)
-    extrinsic_data = data["top_center_lidar-to-center_camera-extrinsic"]["param"]["sensor_calib"]["data"]
+    extrinsic_data = data["top_center_lidar-to-cam1-extrinsic"]["param"]["sensor_calib"]["data"]
     print(extrinsic_data)
     extrinsic_matrix = np.array(extrinsic_data)
     print("extrinsic_matrix")
@@ -20,9 +21,9 @@ def load_extrinsic(filename):
 
 def load_intrinsic(filename):
     with open(filename, 'r') as file:
-        data = json.load(file)
-    intrinsic_data = data["center_camera-intrinsic"]["param"]["cam_K"]["data"]
-    intrinsic_matrix = np.array(intrinsic_data)
+        data = yaml.safe_load(file)
+    intrinsic_data = data["camera_matrix"]["data"]
+    intrinsic_matrix = np.array(intrinsic_data).reshape(3,3)
     print("intrinsic")
     print(intrinsic_matrix)
     return intrinsic_matrix
@@ -48,6 +49,7 @@ def calculate_euclidean_distance(point1, point2):
     point2 = np.array(point2)
     return np.linalg.norm(point1 - point2)
 
+
 def validation(points3d, intrinsic, R, t, actual_points2d):
     #run loop
     for i in range(len(points3d)):  
@@ -61,17 +63,39 @@ def validation(points3d, intrinsic, R, t, actual_points2d):
         
         error = calculate_euclidean_distance(calc_points2d[:2], actual_points2d[i])
         print("Error corresponding to the point %d: %s" % (i + 1, error))
+    return error
 
-        #write it to another json file or a normal text file
+def save_params_to_json(file_path,intrinsic_data,extrinsic_data,r,t,error):
+    intrinsic_data = intrinsic.tolist()
+    extrinsic_data = extrinsic_data.tolist()
+    r = r.tolist()
+    t = t.tolist()
+    json_dict = {
+        "calculated_error_matrix_camera_to_lidar": {
+            "sensor_name": "top_center_lidar",
+            "camera_name": "camera1",
+            "intrinsic_data": intrinsic_data,
+            "extrinsic_data": extrinsic_data,
+            "rotation": r,
+            "translation":t,
+            "error": {
+                    "data": error.tolist()
+                }
+            }
+    }
+    with open(file_path, 'w') as file:
+        json.dump(json_dict, file, indent=4)
+
         
 if __name__ == '__main__':
     #load the intrinsic, extrinsic, then R and T
     #remember to call the functions to first load the points from json and then send it to vlidate funstion
 
-    intrinsic = load_intrinsic('/home/hitesh/Documents/Project/multi_target_calibration/cam1/intrinsic_cam1.json')
-    extrinsic_matrix = load_extrinsic('/home/hitesh/Documents/Project/extrinsic_cam1__TEST.json')  
+    intrinsic = load_intrinsic('/home/hitesh/Documents/Project/intrinsic_calibrations_of_camera/intrinsic_cam1.yaml')
+    extrinsic_matrix = load_extrinsic('/home/hitesh/Documents/Project/extrinsic_camera calibration_jsonfiles/extrinsic_cam1__.json')  
     R = extrinsic_matrix[:3, :3]
     t = extrinsic_matrix[:3, 3]
 
-    points3d, actual_points2d = load_points('/home/hitesh/Documents/Project/clicked points/clikedpoints camera1 to lidar.json') 
-    validation(points3d, intrinsic, R, t, actual_points2d)
+    points3d, actual_points2d = load_points('/home/hitesh/Documents/Project/clicked points/clicked_points_cam1_CALIB.json') 
+    error = validation(points3d, intrinsic, R, t, actual_points2d)
+    save_params_to_json("/home/hitesh/Documents/Project/error_calibrated_json_files/cam1_to_lidar.json",intrinsic,extrinsic_matrix,R,t,error=error)
