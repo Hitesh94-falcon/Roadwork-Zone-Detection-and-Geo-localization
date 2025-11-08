@@ -66,7 +66,7 @@ def validation(points3d, intrinsic, R, t, actual_points2d):
     return error
 
 def save_params_to_json(file_path,intrinsic_data,extrinsic_data,r,t,error):
-    intrinsic_data = intrinsic.tolist()
+    intrinsic_data = intrinsic_data.tolist()
     extrinsic_data = extrinsic_data.tolist()
     r = r.tolist()
     t = t.tolist()
@@ -79,7 +79,7 @@ def save_params_to_json(file_path,intrinsic_data,extrinsic_data,r,t,error):
             "rotation": r,
             "translation":t,
             "error": {
-                    "data": error.tolist()
+                    "data": error
                 }
             }
     }
@@ -91,11 +91,12 @@ if __name__ == '__main__':
     #load the intrinsic, extrinsic, then R and T
     #remember to call the functions to first load the points from json and then send it to vlidate funstion
 
-    intrinsic = load_intrinsic('/home/hitesh/Documents/Project/intrinsic_calibrations_of_camera/intrinsic_cam1.yaml')
-    extrinsic_matrix = load_extrinsic('/home/hitesh/Documents/Project/extrinsic_camera calibration_jsonfiles/extrinsic_cam1__.json')  
+    intrinsic = load_intrinsic('/home/hitesh/Documents/Project/intrinsic_calibrations_of_camera/intrinsic_cam7.yaml')
+    extrinsic_matrix = load_extrinsic('/home/hitesh/Documents/Project/extrinsic_camera calibration_jsonfiles/extrinsic_cam7__.json')  
     R = extrinsic_matrix[:3, :3]
     t = extrinsic_matrix[:3, 3]
+    print(f"r:",R,"t:",t)
 
-    points3d, actual_points2d = load_points('/home/hitesh/Documents/Project/clicked points/clicked_points_cam1_CALIB.json') 
+    points3d, actual_points2d = load_points('/home/hitesh/Documents/Project/clicked points/clicked_points_cam7_CALIB.json') 
     error = validation(points3d, intrinsic, R, t, actual_points2d)
-    save_params_to_json("/home/hitesh/Documents/Project/error_calibrated_json_files/cam1_to_lidar.json",intrinsic,extrinsic_matrix,R,t,error=error)
+    save_params_to_json("/home/hitesh/Documents/Project/error_calibrated_json_files/cam7_to_lidar.json",intrinsic,extrinsic_matrix,R,t,error=error)
