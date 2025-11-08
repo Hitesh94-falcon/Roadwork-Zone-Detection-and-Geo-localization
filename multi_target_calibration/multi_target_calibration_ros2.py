@@ -1,7 +1,3 @@
-
-
-
-
 #!/usr/bin/env python3
 
 #author: Zhiran Yan
@@ -26,31 +22,38 @@ Point3D = namedtuple('Point3D', 'x y z')
 np.set_printoptions(suppress=True)
 
 
+with open("/home/hitesh/Documents/Project/multi_target_calibration/filepaths.json", "r") as file:
+    paths = json.load(file)
+
+
+
+
 class BoundingBoxFilterNode(Node):
     def __init__(self):
         super().__init__('image_point_lidar_calibrator')
         self.window_name = "Test"
         self.calibrated_number = 0
         self.bridge = CvBridge()
+        
 
         # Create subscribers and publisher with appropriate QoS profiles
         from rclpy.qos import qos_profile_sensor_data
         self.create_subscription(
             Image,
-            '/camera3/pylon_ros2_camera_node_camera3/image_raw',
+            paths["ros2_nodes"]["camera_node"],
             self.image_callback,
             qos_profile_sensor_data
         )
         self.image_pub = self.create_publisher(Image, '/image_out', 10)
         self.create_subscription(
             PointStamped,
-            '/clicked_point',
+            paths["ros2_nodes"]['clicked_point'],
             self.clicked_point_callback,
             10  # QoS for non-sensor data
         )
         self.create_subscription(
             PointCloud2,
-            '/ouster/points',
+            paths["ros2_nodes"]["lidar_points_node"],
             self.lidar_callback,
             qos_profile_sensor_data
         )
@@ -60,7 +63,7 @@ class BoundingBoxFilterNode(Node):
         #     "/media/zhiranworkstation/T7a/group_project/multi_target_calibration/cam1/intrinsic_cam1.json"
         # )
         
-        self.load_intrinsicyaml("/home/hitesh/Documents/Project/intrinsic_calibrations_of_camera/intrinsic_cam3.yaml")
+        self.load_intrinsicyaml(paths["calibration_file_paths"]["intrinsic_file_path"])
 
         # Initialize image, point cloud, and point storage
         self.image = np.zeros((500, 500, 3), dtype=np.uint8)
@@ -97,7 +100,7 @@ class BoundingBoxFilterNode(Node):
         json_dict = {
             "top_center_lidar-to-cam1-extrinsic": {
                 "sensor_name": "top_center_lidar",
-                "target_sensor_name": "camera1",
+                "target_sensor_name": "camera7",
                 "device_type": "relational",
                 "param_type": "extrinsic",
                 "param": {
@@ -188,7 +191,7 @@ class BoundingBoxFilterNode(Node):
                 self.calibrated_number = len(self.points3d)
                 self.save_rotation_to_json(
                     transformation_matrix,
-                    '/home/hitesh/Documents/Project/extrinsic_camera calibration_jsonfiles/extrinsic_cam3__.json'
+                    paths["calibration_file_paths"]["extrinic_calibrated_path"]
                 )
 
     def calibrate(self):
@@ -245,7 +248,7 @@ def main(args=None):
     finally:
         # Save the clicked points before shutting down.
         node.save_clicked_points(
-            '/home/hitesh/Documents/Project/clicked points/clicked_points_cam3_CALIB.json'
+            paths["calibration_file_paths"]["clicked_points"]
         )
         cv2.destroyAllWindows()
         node.destroy_node()
