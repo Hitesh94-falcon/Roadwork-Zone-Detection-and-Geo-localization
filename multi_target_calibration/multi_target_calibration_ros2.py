@@ -7,14 +7,15 @@
 
 import rclpy
 from rclpy.node import Node
-import json
 from sensor_msgs.msg import Image, PointCloud2
+from sensor_msgs_py import point_cloud2 as pc2
 from geometry_msgs.msg import PointStamped
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
 import numpy as np
 from collections import namedtuple
-import yaml
+import yaml , json
+
 
 # Define simple 2D and 3D point containers
 Point2D = namedtuple('Point2D', 'x y')
@@ -25,7 +26,8 @@ np.set_printoptions(suppress=True)
 with open("/home/hitesh/Documents/Project/multi_target_calibration/filepaths.json", "r") as file:
     paths = json.load(file)
 
-
+global calibrate
+calibrate = True
 
 
 class BoundingBoxFilterNode(Node):
@@ -52,7 +54,7 @@ class BoundingBoxFilterNode(Node):
             10  # QoS for non-sensor data
         )
         self.create_subscription(
-            PointCloud2,
+            pc2,
             paths["ros2_nodes"]["lidar_points_node"],
             self.lidar_callback,
             qos_profile_sensor_data
@@ -177,82 +179,149 @@ class BoundingBoxFilterNode(Node):
 
     def show_image(self):
         rescaled_image = cv2.resize(self.image,(1920,1200))
-        # cv2.imshow(self.window_name, self.image)
         cv2.imshow(self.window_name, rescaled_image)
         cv2.setMouseCallback(self.window_name, self.mouse_event)
         cv2.waitKey(1)
 
-        # Check if enough corresponding points have been collected to perform calibration.
-        if (len(self.points3d) > 9 and 
-            len(self.points3d) == len(self.points2d) and 
-            self.calibrated_number != len(self.points3d)):
-            transformation_matrix = self.calibrate()
-            if transformation_matrix is not None:
-                self.calibrated_number = len(self.points3d)
-                self.save_rotation_to_json(
-                    transformation_matrix,
-                    paths["calibration_file_paths"]["extrinic_calibrated_path"]
-                )
+        if calibrate:
+            # Check if enough corresponding points have been collected to perform calibration.
+            if (len(self.points3d) > 9 and 
+                len(self.points3d) == len(self.points2d) and 
+                self.calibrated_number != len(self.points3d)):
+                transformation_matrix = self.calibrate()
+                if transformation_matrix is not None:
+                    self.calibrated_number = len(self.points3d)
+                    self.save_rotation_to_json(
+                        transformation_matrix,
+                        paths["calibration_file_paths"]["extrinic_calibrated_path"]
+                    )
+                    # Visualize lidar points on the current image immediately after calibration
+                    if self.point_cloud is not None:
+                        self.points_on_image(self.image.copy(), self.point_cloud, transformation_matrix, self.intrinsic)
+
+            # If we already have a computed transform, keep projecting incoming clouds each loop
+            elif hasattr(self, "rotation_translation") and self.point_cloud is not None:
+                self.points_on_image(self.image.copy(), self.point_cloud, self.rotation_translation, self.intrinsic)
 
     def calibrate(self):
-        self.get_logger().info(f"Calibrating with {len(self.points3d)} 3D points and {len(self.points2d)} 2D points.")
-        world_points = []
-        image_points = []
-        for idx in range(len(self.points3d)):
-            pt3d = self.points3d[idx]
-            pt2d = self.points2d[idx]
-            world_points.append([pt3d.x, pt3d.y, pt3d.z])
-            image_points.append([pt2d.x, pt2d.y])
-        objectPoints = np.array(world_points, dtype=float).reshape(len(self.points3d), 3, 1)
-        imagePoints = np.array(image_points, dtype=float).reshape(len(self.points2d), 2, 1)
-        # Use zero distortion for calibration since we already undistort the images.
-        distCoeffs_zero = np.zeros((5, 1))
-        # Perform PnP RANSAC calibration using the P3P method.
-        success, R_vec, t_vec, inliers = cv2.solvePnPRansac(
-            objectPoints,
-            imagePoints,
-            self.intrinsic,
-            distCoeffs_zero,
-            flags=cv2.SOLVEPNP_P3P,
-            iterationsCount=1000
-        )
-        if success:
-            R_mat, _ = cv2.Rodrigues(R_vec)
-            rotation_translation = np.hstack((R_mat, t_vec.reshape(-1, 1)))
-            transformation_matrix = np.vstack((rotation_translation, [0, 0, 0, 1]))
-            
-            # Project the collected 3D points onto the image for verification.
-            np_world_points = np.array([
-                [pt.x for pt in self.points3d],
-                [pt.y for pt in self.points3d],
-                [pt.z for pt in self.points3d],
-                [1 for _ in self.points3d]
-            ], dtype=float)
-            projected_2d_points = self.cloudtoImage(np_world_points, transformation_matrix, self.intrinsic)
-            self.get_logger().info(f"Final projected 2D points on the image plane: {projected_2d_points}")
-            clicked_2d_points = np.array([[pt.x for pt in self.points2d], [pt.y for pt in self.points2d]])
-            self.get_logger().info(f"Difference (projected - clicked): {projected_2d_points - clicked_2d_points}")
-            return transformation_matrix
+        if calibrate:
+            self.get_logger().info(f"Calibrating with {len(self.points3d)} 3D points and {len(self.points2d)} 2D points.")
+            world_points = []
+            image_points = []
+            for idx in range(len(self.points3d)):
+                pt3d = self.points3d[idx]
+                pt2d = self.points2d[idx]
+                world_points.append([pt3d.x, pt3d.y, pt3d.z])
+                image_points.append([pt2d.x, pt2d.y])
+            objectPoints = np.array(world_points, dtype=float).reshape(len(self.points3d), 3, 1)
+            imagePoints = np.array(image_points, dtype=float).reshape(len(self.points2d), 2, 1)
+            # Use zero distortion for calibration since we already undistort the images.
+            distCoeffs_zero = np.zeros((5, 1))
+            # Perform PnP RANSAC calibration using the P3P method.
+            success, R_vec, t_vec, inliers = cv2.solvePnPRansac(
+                objectPoints,
+                imagePoints,
+                self.intrinsic,
+                distCoeffs_zero,
+                flags=cv2.SOLVEPNP_P3P,
+                iterationsCount=1000
+            )
+            if success:
+                R_mat, _ = cv2.Rodrigues(R_vec)
+                self.rotation_translation = np.hstack((R_mat, t_vec.reshape(-1, 1)))
+                transformation_matrix = np.vstack((self.rotation_translation, [0, 0, 0, 1]))
+                
+                # Project the collected 3D points onto the image for verification.
+                np_world_points = np.array([
+                    [pt.x for pt in self.points3d],
+                    [pt.y for pt in self.points3d],
+                    [pt.z for pt in self.points3d],
+                    [1 for _ in self.points3d]
+                ], dtype=float)
+                projected_2d_points = self.cloudtoImage(np_world_points, transformation_matrix, self.intrinsic)
+                self.get_logger().info(f"Final projected 2D points on the image plane: {projected_2d_points}")
+                clicked_2d_points = np.array([[pt.x for pt in self.points2d], [pt.y for pt in self.points2d]])
+                self.get_logger().info(f"Difference (projected - clicked): {projected_2d_points - clicked_2d_points}")
+                return transformation_matrix
+            else:
+                self.get_logger().error("Calibration failed.")
+                return self.rotation_translation
+    def points_on_image(self, undistorted_img, point_cloud, rotation_translation, intrinsic, veloyne=False):
+        # Ensure numpy arrays
+        intrinsic = np.asarray(intrinsic, dtype=float)
+        rt = np.asarray(rotation_translation, dtype=float)
+
+        # Accept 4x4 homogeneous, 3x4 extrinsic, or 3x3 rotation (append zero translation)
+        if rt.shape == (4, 4):
+            rt3x4 = rt[:3, :]
+        elif rt.shape == (3, 4):
+            rt3x4 = rt
+        elif rt.shape == (3, 3):
+            rt3x4 = np.hstack((rt, np.zeros((3, 1), dtype=float)))
         else:
-            self.get_logger().error("Calibration failed.")
-            return None
+            raise ValueError(f"Unsupported rotation_translation shape {rt.shape}; expected (4,4) or (3,4) or (3,3)")
+
+        # Projection matrix 3x4
+        P = intrinsic @ rt3x4
+
+        # Read point cloud into NxM list safely
+        pts = list(pc2.read_points(point_cloud, skip_nans=True, field_names=("x", "y", "z", "intensity")))
+        if len(pts) == 0:
+            return
+        arr = np.array(pts).T  # shape could be (3,N) or (4,N)
+
+        # Ensure homogeneous 4xN (x,y,z,1) and keep intensity if present
+        if arr.shape[0] == 3:
+            intens = np.zeros(arr.shape[1], dtype=float)
+            hom = np.vstack((arr, np.ones((1, arr.shape[1]))))
+        else:
+            intens = arr[3, :].copy()
+            hom = arr.copy()
+            hom[3, :] = 1.0
+
+        # Project: 3x4 @ 4xN -> 3xN
+        proj = P @ hom
+        z = proj[2, :]
+        valid = z != 0
+        u = np.zeros_like(z)
+        v = np.zeros_like(z)
+        u[valid] = (proj[0, valid] / z[valid])
+        v[valid] = (proj[1, valid] / z[valid])
+
+        # prepare int coords and colors
+        u = np.round(u).astype(int)
+        v = np.round(v).astype(int)
+        colors = intens.astype(int) if intens is not None else np.zeros_like(u)
+
+        h, w = undistorted_img.shape[:2]
+        for uu, vv, col, ok in zip(u, v, colors, valid):
+            if not ok:
+                continue
+            if 0 <= uu < w and 0 <= vv < h:
+                c = int(np.clip(col, 0, 255))
+                cv2.circle(undistorted_img, (uu, vv), 1, (140, 70, c), -1)
+
+        cv2.imshow("Lidar points on image", undistorted_img)
+        cv2.waitKey(1)
 
 
 def main(args=None):
-    rclpy.init(args=args)
-    node = BoundingBoxFilterNode()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        node.get_logger().info("Keyboard Interrupt, shutting down.")
-    finally:
-        # Save the clicked points before shutting down.
-        node.save_clicked_points(
-            paths["calibration_file_paths"]["clicked_points"]
-        )
-        cv2.destroyAllWindows()
-        node.destroy_node()
-        rclpy.shutdown()
+
+        rclpy.init(args=args)
+        node = BoundingBoxFilterNode()
+        try:
+            rclpy.spin(node)
+        except KeyboardInterrupt:
+            node.get_logger().info("Keyboard Interrupt, shutting down.")
+        finally:
+            # Save the clicked points before shutting down.
+            node.save_clicked_points(
+                paths["calibration_file_paths"]["clicked_points"]
+            )
+            cv2.destroyAllWindows()
+            node.destroy_node()
+            rclpy.shutdown()
+
 
 
 if __name__ == '__main__':

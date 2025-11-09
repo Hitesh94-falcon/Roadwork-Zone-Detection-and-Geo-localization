@@ -6,8 +6,6 @@ import yaml
 
 """CHANGE THE PATH DIRECTORY IN THE MAIN()"""
 
-#CLICKED_POINT_PATH = '/home/shyam/multi_targets_based_new/src/extrinsic_3d_to_camera/scripts/CLICKED.json'
-
 #just load the data by opening the file as r . Check w3school examples
 def load_extrinsic(filename):
     with open(filename, 'r') as file:
@@ -91,12 +89,12 @@ if __name__ == '__main__':
     #load the intrinsic, extrinsic, then R and T
     #remember to call the functions to first load the points from json and then send it to vlidate funstion
 
-    intrinsic = load_intrinsic('/home/hitesh/Documents/Project/intrinsic_calibrations_of_camera/intrinsic_cam7.yaml')
-    extrinsic_matrix = load_extrinsic('/home/hitesh/Documents/Project/extrinsic_camera calibration_jsonfiles/extrinsic_cam7__.json')  
+    intrinsic = load_intrinsic('/home/hitesh/Documents/Project/intrinsic_calibrations_of_camera/intrinsic_cam2.yaml')
+    extrinsic_matrix = load_extrinsic('/home/hitesh/Documents/Project/extrinsic_camera calibration_jsonfiles/extrinsic_cam2__.json')  
     R = extrinsic_matrix[:3, :3]
     t = extrinsic_matrix[:3, 3]
     print(f"r:",R,"t:",t)
 
-    points3d, actual_points2d = load_points('/home/hitesh/Documents/Project/clicked points/clicked_points_cam7_CALIB.json') 
+    points3d, actual_points2d = load_points('/home/hitesh/Documents/Project/clicked points/clicked_points_cam2_CALIB.json') 
     error = validation(points3d, intrinsic, R, t, actual_points2d)
-    save_params_to_json("/home/hitesh/Documents/Project/error_calibrated_json_files/cam7_to_lidar.json",intrinsic,extrinsic_matrix,R,t,error=error)
+    save_params_to_json("/home/hitesh/Documents/Project/error_calibrated_json_files/cam2_to_lidar.json",intrinsic,extrinsic_matrix,R,t,error=error)
