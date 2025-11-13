@@ -99,7 +99,8 @@ class Points_on_image(Node):
                 self.get_logger().debug(f"No transform yet: {e}")
                 return
         if hasattr(self, "point_cloud") and self.point_cloud is not None:
-            self.points_on_image(self.image.copy(), self.point_cloud, self.r_t, self.intrinsic)
+            self.points_on_image(self.image, self.point_cloud, self.r_t, self.intrinsic)
+
 
     def points_on_image(self, undistorted_img, point_cloud, rotation_translation, intrinsic, veloyne=False):
    
@@ -115,9 +116,10 @@ class Points_on_image(Node):
         else:
             raise ValueError(f"Unsupported rotation_translation shape {rt.shape}")
 
-        P = intrinsic @ rt3x4  
+        P = np.dot(intrinsic,rt3x4)
 
         pts = list(pc2.read_points(point_cloud, skip_nans=True, field_names=("x", "y", "z", "intensity")))
+
         if not pts:
             return
 
@@ -136,10 +138,10 @@ class Points_on_image(Node):
             intens = np.zeros(xyz.shape[1], dtype=float)
 
         hom = np.vstack((xyz, np.ones((1, xyz.shape[1]))))  
-        proj = P @ hom 
+        proj = np.dot(P,hom)
 
         z = proj[2, :]
-        valid = z > 1e-6
+        valid = z > 0
         if not np.any(valid):
             return
 
@@ -156,7 +158,6 @@ class Points_on_image(Node):
 
         cv2.imshow("Lidar points on image", undistorted_img)
         cv2.waitKey(1)
-
 
 def main(args=None):
         rclpy.init(args=args)
